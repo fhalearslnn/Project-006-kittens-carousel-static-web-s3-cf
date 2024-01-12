@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+   Cloudformation template for kittens carousel static website version 2 deploy on S3 through Cloudfront and Route53.
+  
+Parameters:
+  #DomainName:
+   # Description: Domain name of existing Amazon Route 53 hosted zone 
+    #Type: AWS::Route53::HostedZone::Id
+   
+
+  PrjDomainName:
+    Description: Full subdomain name for the project exp. blog.arsdevops.com
+    Type: String
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
+
+    
+
+Resources:
+
+  PrjBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      #AccessControl: PublicRead
+      BucketName: !Ref PrjDomainName
+      PublicAccessBlockConfiguration:
+           BlockPublicAcls: FALSE
+      OwnershipControls:
+           Rules:
+                - ObjectOwnership: BucketOwnerEnforced   
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  PrjBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PrjBucket # Required
+      PolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Sid: PublicReadGetObject
+            Action: 
+              - 's3:GetObject'
+              # - s3:PutObject
+            Effect: Allow  
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref PrjBucket
+                - /*  
+            Principal: '*'  
+            #!Join ['', ['arn:aws:s3:::', !Ref PrjBucket, /*]]
+            # !Sub "${PrjBucket.Arn}/*" # Required
+            
+  #PrjCertificate:
+    #Type: AWS::CertificateManager::Certificate
+    #Properties:
+      #CertificateAuthorityArn: arn:aws:acm:us-east-1:631395361224:certificate/826d095c-b2c2-45fb-9cbd-8971e9e0c5c9
+      #CertificateTransparencyLoggingPreference: ENABLED
+      #DomainName: !Ref PrjDomainName  # Required
+      #DomainValidationOptions: 
+        #- DomainName: !Ref PrjDomainName
+          #HostedZoneId: Z06472473CX9PNVU8BB1Z #!Ref DomainName
+      #ValidationMethod: DNS
+    
+
+  PRjDNSName:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: Z06472473CX9PNVU8BB1Z #!Join ['', [!Ref DomainName, .]]  
+      RecordSets: 
+        - Name: !Ref PrjDomainName
+          Type: A
+          AliasTarget:
+               DNSName: !GetAtt PrjCloudFront.DomainName
+               HostedZoneId: Z2FDTNDATAQYW2
+
+  PrjCloudFront:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+        - !Ref PrjDomainName
+        Comment: Cloudfront Distribution pointing to Project s3 bucket
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          #ForwardedValues:
+               #Cookies: 
+                 #Forward: none
+               #QueryString: true
+          TargetOriginId: PrjS3Bucket    
+          Compress: true
+          ViewerProtocolPolicy: allow-all #redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2
+        Origins:
+          - DomainName: !Select [2, !Split ["/", !GetAtt PrjBucket.WebsiteURL]]
+            Id: PrjS3Bucket
+            CustomOriginConfig:
+                 OriginProtocolPolicy: http-only # match-viewer
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+             AcmCertificateArn: arn:aws:acm:us-east-1:631395361224:certificate/826d095c-b2c2-45fb-9cbd-8971e9e0c5c9  # !Ref PrjCertificate
+             SslSupportMethod: sni-only
+             MinimumProtocolVersion: TLSv1.2_2021
+Outputs:
+  BucketName:
+    Description: S3 Bucket URL for Project Website
+    Value: !GetAtt PrjBucket.WebsiteURL
+  CloudfrontEndpoint:
+    Description: Endpoint for Project Cloudfront
+    Value: !GetAtt PrjCloudFront.DomainName
+  FullDomainName:
+    Description: Full Domain Name of my Project
+    Value: !Ref PrjDomainName
+
